@@ -1,10 +1,9 @@
-name: Persephone Kernel CI
+name: Kernel Build
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - 11  # Match your repo branch
+    branches: [ main, master ]
 
 jobs:
   build:
@@ -12,87 +11,33 @@ jobs:
     timeout-minutes: 180
 
     steps:
-      - name: 📥 Checkout Kernel Source
-        uses: actions/checkout@v4
+    - name: 📥 Checkout kernel source
+      uses: actions/checkout@v4
 
-      - name: ⚙️ Install Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            bc bison build-essential ccache flex git gnupg gperf libncurses5-dev \
-            libssl-dev libtool libxml2-utils lzop nano openjdk-11-jdk \
-            python2 python-is-python3 rsync unzip wget zip zlib1g-dev
+    - name: ⚙️ Install dependencies
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install -y \
+          bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+          git gnupg gperf libncurses-dev libncurses5-dev \
+          liblz4-tool libssl-dev libxml2 libxml2-utils lzop \
+          rsync schedtool squashfs-tools xsltproc zip zlib1g-dev \
+          python2 python-is-python3
 
-      - name: 🔧 Clone Toolchains
-        run: |
-          mkdir -p /home/runner/toolchains
-          cd /home/runner/toolchains
+        sudo apt-get install -y gcc-arm-linux-gnueabi g++-arm-linux-gnueabi
 
-          echo "Cloning Azure Clang"
-          git clone --depth=1 https://gitlab.com/Panchajanya1999/azure-clang.git clang-llvm
+        sudo update-alternatives --install /usr/bin/python python /usr/bin/python2 1
+        sudo update-alternatives --install /usr/bin/python python /usr/bin/python3 2
 
-          echo "Cloning GCC64"
-          git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc64 gcc
+    - name: 🛠️ Set executable permission on build.sh
+      run: chmod +x build.sh
 
-          echo "Cloning GCC32"
-          git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc32 gcc32
+    - name: 🚀 Run build.sh
+      run: ./build.sh
 
-          echo "Cloning libufdt for DTBO"
-          git clone https://android.googlesource.com/platform/system/libufdt ufdt
-
-      - name: 🏗️ Build Kernel
-        run: |
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export KBUILD_BUILD_USER="runner"
-          export KBUILD_BUILD_HOST="github"
-          export CLANG_PATH=/home/runner/toolchains/clang-llvm
-          export GCC64_PATH=/home/runner/toolchains/gcc
-          export GCC32_PATH=/home/runner/toolchains/gcc32
-          export PATH=$CLANG_PATH/bin:$GCC64_PATH/bin:$GCC32_PATH/bin:$PATH
-          export KBUILD_COMPILER_STRING="$($CLANG_PATH/bin/clang --version | head -n 1)"
-          export PROCS=$(nproc)
-
-          echo "Compiler: $KBUILD_COMPILER_STRING"
-
-          echo "Cleaning output directory"
-          rm -rf out && mkdir out
-
-          echo "Running defconfig"
-          make O=out persephone_defconfig
-
-          echo "Compiling kernel"
-          make -j$PROCS O=out \
-            CC="ccache clang" \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            LD=ld.lld \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi-
-
-      - name: 🧱 Build DTBO Image
-        if: success()
-        run: |
-          python2 /home/runner/toolchains/ufdt/utils/src/mkdtboimg.py \
-            create out/arch/arm64/boot/dtbo.img --page_size=4096 \
-            out/arch/arm64/boot/dts/vendor/qcom/avicii-overlay.dtbo
-
-      - name: 📦 Create Flashable ZIP
-        run: |
-          cd AnyKernel3
-          cp ../out/arch/arm64/boot/Image .
-          cp ../out/arch/arm64/boot/dtbo.img .
-          cp -af ../init.PersSpectrum.rc init.spectrum.rc
-          sed -i 's/persist.spectrum.kernel.*/persist.spectrum.kernel Persephone/g' init.spectrum.rc
-
-          zip -r9 Persephone-X2-A11-avicii-$(date +%Y%m%d-%H%M).zip * -x .git README.md
-
-      - name: ☁️ Upload ZIP Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Persephone-Kernel-ZIP
-          path: AnyKernel3/*.zi
+    - name: 📦 Upload kernel zip
+      uses: actions/upload-artifact@v4
+      with:
+        name: Persephone-Kernel
+        path: AnyKernel3/*.zip
+        retention-days: 7
