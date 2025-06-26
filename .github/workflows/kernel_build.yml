@@ -23,10 +23,16 @@ jobs:
             libssl-dev libtool libxml2-utils lzop nano openjdk-11-jdk \
             python2 python-is-python3 rsync unzip wget zip zlib1g-dev
 
-      - name: Clone Toolchains and Scripts
+      - name: Download Clang from Google (r450784d)
         run: |
           mkdir -p /home/runner/prashant
-          git clone --depth=1 https://github.com/sohamxda7/llvm-stable.git -b aosp-13.0.3 /home/runner/prashant/clang-llvm
+          cd /home/runner/prashant
+          curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r450784d.tar.gz
+          mkdir clang-llvm
+          tar -xzf clang-r450784d.tar.gz -C clang-llvm
+
+      - name: Clone GCC Toolchains
+        run: |
           git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc64 /home/runner/prashant/gcc
           git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc32 /home/runner/prashant/gcc32
           git clone https://android.googlesource.com/platform/system/libufdt /home/runner/prashant/scripts/ufdt/libufdt
@@ -36,23 +42,28 @@ jobs:
 
       - name: Build Kernel
         run: |
-          export KBUILD_BUILD_USER=runner
-          export KBUILD_BUILD_HOST=github
           export ARCH=arm64
           export SUBARCH=arm64
-          export PATH=/home/runner/prashant/clang-llvm/bin:/home/runner/prashant/gcc/bin:/home/runner/prashant/gcc32/bin:$PATH
-          export KBUILD_COMPILER_STRING="$(/home/runner/prashant/clang-llvm/bin/clang --version | head -n 1)"
+          export KBUILD_BUILD_USER="runner"
+          export KBUILD_BUILD_HOST="github"
           export PROCS=$(nproc --all)
+
+          export CLANG_PATH=/home/runner/prashant/clang-llvm
+          export GCC64_PATH=/home/runner/prashant/gcc
+          export GCC32_PATH=/home/runner/prashant/gcc32
+
+          export PATH=$CLANG_PATH/bin:$GCC64_PATH/bin:$GCC32_PATH/bin:$PATH
+          export KBUILD_COMPILER_STRING="$($CLANG_PATH/bin/clang --version | head -n 1)"
 
           make O=out persephone_defconfig
 
           make -j$PROCS O=out \
             CC="ccache clang" \
-            AR=llvm-ar \
             NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            AR=llvm-ar \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            OBJCOPY=llvm-objcopy \
             LD=ld.lld \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
@@ -78,4 +89,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Persephone-Kernel-ZIP
-          path: AnyKernel3/*.zi
+          path: AnyKernel3/*.zip
