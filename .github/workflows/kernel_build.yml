@@ -1,0 +1,81 @@
+name: Build Persephone Kernel
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 11
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+
+      - name: Set up Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            bc bison build-essential ccache flex git gnupg gperf libncurses5-dev \
+            libssl-dev libtool libxml2-utils lzop nano openjdk-11-jdk \
+            python2 python-is-python3 rsync unzip wget zip zlib1g-dev
+
+      - name: Clone Toolchains and Scripts
+        run: |
+          mkdir -p /home/runner/prashant
+          git clone --depth=1 https://github.com/sohamxda7/llvm-stable.git -b aosp-13.0.3 /home/runner/prashant/clang-llvm
+          git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc64 /home/runner/prashant/gcc
+          git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc32 /home/runner/prashant/gcc32
+          git clone https://android.googlesource.com/platform/system/libufdt /home/runner/prashant/scripts/ufdt/libufdt
+
+      - name: Make Out Directory
+        run: mkdir -p out
+
+      - name: Build Kernel
+        run: |
+          export KBUILD_BUILD_USER=runner
+          export KBUILD_BUILD_HOST=github
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH=/home/runner/prashant/clang-llvm/bin:/home/runner/prashant/gcc/bin:/home/runner/prashant/gcc32/bin:$PATH
+          export KBUILD_COMPILER_STRING="$(/home/runner/prashant/clang-llvm/bin/clang --version | head -n 1)"
+          export PROCS=$(nproc --all)
+
+          make O=out persephone_defconfig
+
+          make -j$PROCS O=out \
+            CC="ccache clang" \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            OBJCOPY=llvm-objcopy \
+            LD=ld.lld \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi-
+
+      - name: Build DTBO Image
+        if: success()
+        run: |
+          python2 /home/runner/prashant/scripts/ufdt/libufdt/utils/src/mkdtboimg.py \
+            create out/arch/arm64/boot/dtbo.img --page_size=4096 \
+            out/arch/arm64/boot/dts/vendor/qcom/avicii-overlay.dtbo
+
+      - name: Create Flashable ZIP
+        run: |
+          cd AnyKernel3
+          mv ../out/arch/arm64/boot/Image .
+          mv ../out/arch/arm64/boot/dtbo.img .
+          cp -af ../init.PersSpectrum.rc init.spectrum.rc
+          sed -i 's/persist.spectrum.kernel.*/persist.spectrum.kernel Persephone/g' init.spectrum.rc
+          zip -r9 Persephone-X2-A11-avicii-$(date +%Y%m%d-%H%M).zip * -x .git README.md
+
+      - name: Upload Flashable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Persephone-Kernel-ZIP
+          path: AnyKernel3/*.zi
