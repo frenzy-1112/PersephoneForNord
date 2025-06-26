@@ -1,10 +1,10 @@
-name: Build Persephone Kernel
+name: Persephone Kernel CI
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - 11
+      - 11  # Match your repo branch
 
 jobs:
   build:
@@ -12,10 +12,10 @@ jobs:
     timeout-minutes: 180
 
     steps:
-      - name: Checkout Kernel Source
+      - name: 📥 Checkout Kernel Source
         uses: actions/checkout@v4
 
-      - name: Set up Dependencies
+      - name: ⚙️ Install Dependencies
         run: |
           sudo apt update
           sudo apt install -y \
@@ -23,45 +23,50 @@ jobs:
             libssl-dev libtool libxml2-utils lzop nano openjdk-11-jdk \
             python2 python-is-python3 rsync unzip wget zip zlib1g-dev
 
-      - name: Download Clang from Google (r450784d)
+      - name: 🔧 Clone Toolchains
         run: |
-          mkdir -p /home/runner/prashant
-          cd /home/runner/prashant
-          curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r450784d.tar.gz
-          mkdir clang-llvm
-          tar -xzf clang-r450784d.tar.gz -C clang-llvm
+          mkdir -p /home/runner/toolchains
+          cd /home/runner/toolchains
 
-      - name: Clone GCC Toolchains
-        run: |
-          git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc64 /home/runner/prashant/gcc
-          git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc32 /home/runner/prashant/gcc32
-          git clone https://android.googlesource.com/platform/system/libufdt /home/runner/prashant/scripts/ufdt/libufdt
+          echo "Cloning Azure Clang"
+          git clone --depth=1 https://gitlab.com/Panchajanya1999/azure-clang.git clang-llvm
 
-      - name: Make Out Directory
-        run: mkdir -p out
+          echo "Cloning GCC64"
+          git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc64 gcc
 
-      - name: Build Kernel
+          echo "Cloning GCC32"
+          git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc32 gcc32
+
+          echo "Cloning libufdt for DTBO"
+          git clone https://android.googlesource.com/platform/system/libufdt ufdt
+
+      - name: 🏗️ Build Kernel
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
           export KBUILD_BUILD_USER="runner"
           export KBUILD_BUILD_HOST="github"
-          export PROCS=$(nproc --all)
-
-          export CLANG_PATH=/home/runner/prashant/clang-llvm
-          export GCC64_PATH=/home/runner/prashant/gcc
-          export GCC32_PATH=/home/runner/prashant/gcc32
-
+          export CLANG_PATH=/home/runner/toolchains/clang-llvm
+          export GCC64_PATH=/home/runner/toolchains/gcc
+          export GCC32_PATH=/home/runner/toolchains/gcc32
           export PATH=$CLANG_PATH/bin:$GCC64_PATH/bin:$GCC32_PATH/bin:$PATH
           export KBUILD_COMPILER_STRING="$($CLANG_PATH/bin/clang --version | head -n 1)"
+          export PROCS=$(nproc)
 
+          echo "Compiler: $KBUILD_COMPILER_STRING"
+
+          echo "Cleaning output directory"
+          rm -rf out && mkdir out
+
+          echo "Running defconfig"
           make O=out persephone_defconfig
 
+          echo "Compiling kernel"
           make -j$PROCS O=out \
             CC="ccache clang" \
+            AR=llvm-ar \
             NM=llvm-nm \
             OBJCOPY=llvm-objcopy \
-            AR=llvm-ar \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
             LD=ld.lld \
@@ -69,24 +74,25 @@ jobs:
             CROSS_COMPILE=aarch64-linux-android- \
             CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
-      - name: Build DTBO Image
+      - name: 🧱 Build DTBO Image
         if: success()
         run: |
-          python2 /home/runner/prashant/scripts/ufdt/libufdt/utils/src/mkdtboimg.py \
+          python2 /home/runner/toolchains/ufdt/utils/src/mkdtboimg.py \
             create out/arch/arm64/boot/dtbo.img --page_size=4096 \
             out/arch/arm64/boot/dts/vendor/qcom/avicii-overlay.dtbo
 
-      - name: Create Flashable ZIP
+      - name: 📦 Create Flashable ZIP
         run: |
           cd AnyKernel3
-          mv ../out/arch/arm64/boot/Image .
-          mv ../out/arch/arm64/boot/dtbo.img .
+          cp ../out/arch/arm64/boot/Image .
+          cp ../out/arch/arm64/boot/dtbo.img .
           cp -af ../init.PersSpectrum.rc init.spectrum.rc
           sed -i 's/persist.spectrum.kernel.*/persist.spectrum.kernel Persephone/g' init.spectrum.rc
+
           zip -r9 Persephone-X2-A11-avicii-$(date +%Y%m%d-%H%M).zip * -x .git README.md
 
-      - name: Upload Flashable ZIP
+      - name: ☁️ Upload ZIP Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Persephone-Kernel-ZIP
-          path: AnyKernel3/*.zip
+          path: AnyKernel3/*.zi
