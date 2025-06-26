@@ -14,7 +14,7 @@ jobs:
 
     - name: 📥 Clone Proton Clang
       run: |
-        git clone --depth=1 https://githttps://github.com/kdrag0n/proton-clanghub.com/kdrag0n/proton-clang clang
+        git clone --depth=1 https://github.com/kdrag0n/proton-clanghub.com/kdrag0n/proton-clang clang
 
     - name: 📥 Clone AnyKernel3
       run: |
