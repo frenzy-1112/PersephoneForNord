@@ -9,20 +9,16 @@ jobs:
     timeout-minutes: 90
 
     steps:
-    - name: 📥 Checkout Kernel Source
+    - name: 📥 Checkout Kernel Source (with AnyKernel3)
       uses: actions/checkout@v4
 
     - name: 📥 Clone Proton Clang
       run: |
         git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-    - name: 📥 Clone AnyKernel3
-      run: |
-        git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
-
     - name: ⚙️ Build the Kernel
       run: |
-        # Set up paths
+        # Setup paths and environment
         export KERNEL_DIR=$(pwd)
         export CLANG_PATH=$KERNEL_DIR/clang
         export PATH=$CLANG_PATH/bin:$PATH
@@ -31,13 +27,10 @@ jobs:
         export KBUILD_BUILD_USER=ajit
         export KBUILD_BUILD_HOST=github-ci
 
-        # Clean previous builds
-        make O=out ARCH=arm64 clean
-
-        # Defconfig
+        # Clean and prepare
         make O=out ARCH=arm64 persephone_defconfig
 
-        # Compile
+        # Build the kernel
         make -j$(nproc) \
             O=out \
             ARCH=arm64 \
@@ -46,13 +39,13 @@ jobs:
             CROSS_COMPILE=aarch64-linux-android- \
             CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
-        # Verify kernel image
+        # Check for build success
         if [ ! -f out/arch/arm64/boot/Image.gz-dtb ]; then
           echo "❌ Build failed: Image.gz-dtb not found"
           exit 1
         fi
 
-        # Copy kernel image to AnyKernel3
+        # Copy Image.gz-dtb to AnyKernel3
         cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
 
     - name: 📦 Create Flashable ZIP
@@ -60,8 +53,8 @@ jobs:
         cd AnyKernel3
         zip -r9 ../Persephone-Kernel.zip * -x .git README.md
 
-    - name: 📤 Upload ZIP Artifact
+    - name: 📤 Upload Flashable ZIP
       uses: actions/upload-artifact@v4
       with:
-        name: Persephone-Kernel
+        name: Persephone-Kernel-ZIP
         path: Persephone-Kernel.zip
