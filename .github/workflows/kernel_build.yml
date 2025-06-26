@@ -12,18 +12,18 @@ jobs:
     - name: 📥 Checkout Kernel Source
       uses: actions/checkout@v4
 
-    - name: 📥 Clone Toolchains (Proton Clang + SohamXDA GCC)
+    - name: 📥 Clone Toolchains (Proton Clang + GCC)
       run: |
         # Proton Clang
         git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
 
-        # SohamXDA GCC64 branch
-        git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc64 gcc64 || true
+        # GCC 64-bit (aarch64)
+        git clone --depth=1 https://github.com/mvaisakh/gcc-arm64.git gcc64
 
-        # SohamXDA GCC32 branch
-        git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc32 gcc32 || true
+        # GCC 32-bit (arm)
+        git clone --depth=1 https://github.com/mvaisakh/gcc-arm.git gcc32
 
-    - name: ⚙️ Build Kernel
+    - name: ⚙️ Build the Kernel
       run: |
         export KERNEL_DIR=$(pwd)
         export CLANG_PATH=$KERNEL_DIR/clang
@@ -33,13 +33,13 @@ jobs:
         export KBUILD_BUILD_USER=ajit
         export KBUILD_BUILD_HOST=github-ci
 
-        # Clean output dir
+        # Clean previous output
         make O=out ARCH=arm64 clean
 
         # Load defconfig
         make O=out ARCH=arm64 persephone_defconfig
 
-        # Build
+        # Build the kernel
         make -j$(nproc) \
           O=out \
           ARCH=arm64 \
@@ -48,13 +48,13 @@ jobs:
           CROSS_COMPILE=$KERNEL_DIR/gcc64/bin/aarch64-elf- \
           CROSS_COMPILE_ARM32=$KERNEL_DIR/gcc32/bin/arm-eabi-
 
-        # Verify output
+        # Check kernel image
         if [ ! -f out/arch/arm64/boot/Image.gz-dtb ]; then
           echo "❌ Kernel build failed: Image.gz-dtb not found"
           exit 1
         fi
 
-        # Copy Image to AnyKernel3
+        # Copy to AnyKernel3
         cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
 
     - name: 📦 Create Flashable ZIP
