@@ -35,9 +35,14 @@ jobs:
     - name: 🚀 Run build.sh
       run: ./build.sh
 
+    - name: 🔁 Copy zip from ~/nord/AnyKernel3
+      run: |
+        mkdir -p AnyKernel3
+        cp -v ~/nord/AnyKernel3/*.zip AnyKernel3/ || echo "No ZIP found in ~/nord/AnyKernel3"
+
     - name: 📦 Upload kernel zip
       uses: actions/upload-artifact@v4
       with:
         name: Persephone-Kernel
         path: AnyKernel3/*.zip
-        retention-days: 7
+        retention-days: 
