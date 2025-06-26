@@ -12,18 +12,18 @@ jobs:
     - name: 📥 Checkout Kernel Source
       uses: actions/checkout@v4
 
-    - name: 📥 Clone Toolchains (Proton Clang + AOSP GCC)
+    - name: 📥 Clone Toolchains (Proton Clang + SohamXDA GCC)
       run: |
         # Proton Clang
         git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
 
-        # AOSP GCC 64-bit
-        git clone --depth=1 https://github.com/ZyCromerZ/aarch64-android-toolchain gcc64
+        # SohamXDA GCC64 branch
+        git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc64 gcc64 || true
 
-        # AOSP GCC 32-bit
-        git clone --depth=1 https://github.com/ZyCromerZ/arm-android-toolchain gcc32
+        # SohamXDA GCC32 branch
+        git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc32 gcc32 || true
 
-    - name: ⚙️ Build the Kernel
+    - name: ⚙️ Build Kernel
       run: |
         export KERNEL_DIR=$(pwd)
         export CLANG_PATH=$KERNEL_DIR/clang
@@ -33,28 +33,31 @@ jobs:
         export KBUILD_BUILD_USER=ajit
         export KBUILD_BUILD_HOST=github-ci
 
+        # Clean output dir
         make O=out ARCH=arm64 clean
 
+        # Load defconfig
         make O=out ARCH=arm64 persephone_defconfig
 
+        # Build
         make -j$(nproc) \
           O=out \
           ARCH=arm64 \
           CC=clang \
           CLANG_TRIPLE=aarch64-linux-gnu- \
-          CROSS_COMPILE=$KERNEL_DIR/gcc64/bin/aarch64-linux-android- \
-          CROSS_COMPILE_ARM32=$KERNEL_DIR/gcc32/bin/arm-linux-androideabi-
+          CROSS_COMPILE=$KERNEL_DIR/gcc64/bin/aarch64-elf- \
+          CROSS_COMPILE_ARM32=$KERNEL_DIR/gcc32/bin/arm-eabi-
 
-        # Verify kernel image
+        # Verify output
         if [ ! -f out/arch/arm64/boot/Image.gz-dtb ]; then
-          echo "❌ Build failed: Image.gz-dtb not found"
+          echo "❌ Kernel build failed: Image.gz-dtb not found"
           exit 1
         fi
 
-        # Copy to AnyKernel3
+        # Copy Image to AnyKernel3
         cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
 
-    - name: 📦 Package Flashable ZIP
+    - name: 📦 Create Flashable ZIP
       run: |
         cd AnyKernel3
         zip -r9 ../Persephone-Kernel.zip * -x .git README.md
