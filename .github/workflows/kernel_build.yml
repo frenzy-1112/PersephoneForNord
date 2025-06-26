@@ -12,20 +12,20 @@ jobs:
     - name: 📥 Checkout Kernel Source
       uses: actions/checkout@v4
 
-    - name: 📥 Clone Toolchains (Clang + GCC)
+    - name: 📥 Clone Toolchains (Proton Clang + Neutron GCC)
       run: |
         # Proton Clang
         git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
 
-        # GCC 64-bit for linking
-        git clone --depth=1 https://github.com/mvaisakh/gcc-arm64 gcc64
+        # Neutron GCC 64-bit
+        git clone --depth=1 https://github.com/Neutron-Toolchains/aarch64-elf.git gcc64
 
-        # GCC 32-bit for compatibility
-        git clone --depth=1 https://github.com/mvaisakh/gcc-arm gcc32
+        # Neutron GCC 32-bit
+        git clone --depth=1 https://github.com/Neutron-Toolchains/arm-eabi.git gcc32
 
     - name: ⚙️ Build the Kernel
       run: |
-        # Set environment
+        # Set up environment
         export KERNEL_DIR=$(pwd)
         export CLANG_PATH=$KERNEL_DIR/clang
         export PATH=$CLANG_PATH/bin:$PATH
@@ -34,7 +34,7 @@ jobs:
         export KBUILD_BUILD_USER=ajit
         export KBUILD_BUILD_HOST=github-ci
 
-        # Clean previous builds
+        # Clean output
         make O=out ARCH=arm64 clean
 
         # Load defconfig
@@ -49,13 +49,13 @@ jobs:
           CROSS_COMPILE=$KERNEL_DIR/gcc64/bin/aarch64-elf- \
           CROSS_COMPILE_ARM32=$KERNEL_DIR/gcc32/bin/arm-eabi-
 
-        # Verify output
+        # Check output
         if [ ! -f out/arch/arm64/boot/Image.gz-dtb ]; then
-          echo "❌ Kernel build failed: Image.gz-dtb not found"
+          echo "❌ Build failed: Image.gz-dtb not found"
           exit 1
         fi
 
-        # Copy to AnyKernel3
+        # Copy Image to AnyKernel3
         cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
 
     - name: 📦 Package Flashable ZIP
