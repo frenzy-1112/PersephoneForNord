@@ -1,49 +1,64 @@
-name: GCC Kernel Build
+name: Build Persephone Kernel
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 90
 
     steps:
-    - name: 📥 Checkout Source
+    - name: 📥 Checkout kernel source
       uses: actions/checkout@v4
 
-    - name: 🛠 Install Dependencies
+    - name: 📥 Clone Proton Clang
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
-          git gnupg gperf imagemagick libncurses-dev libncurses5-dev \
-          liblz4-tool libssl-dev libxml2 libxml2-utils \
-          lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev \
-          python2 python-is-python3
+        git clone --depth=1 https://githttps://github.com/kdrag0n/proton-clanghub.com/kdrag0n/proton-clang clang
 
-    - name: 🧰 Clone GCC Toolchains
+    - name: 📥 Clone AnyKernel3
       run: |
-        git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc64 gcc
-        git clone --depth=1 https://github.com/sohamxda7/llvm-stable -b gcc32 gcc32
-        git clone https://android.googlesource.com/platform/system/libufdt scripts/ufdt
+        git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
 
-    - name: 📁 Prepare Output Folder
+    - name: ⚙️ Set up environment and build kernel
       run: |
-        mkdir -p out AnyKernel3
+        export KERNEL_DIR=$(pwd)
+        export OUT_DIR=$KERNEL_DIR/out
+        export CLANG_PATH=$KERNEL_DIR/clang
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export KBUILD_BUILD_USER=ajit
+        export KBUILD_BUILD_HOST=github-ci
+        export PATH="$CLANG_PATH/bin:$PATH"
 
-    - name: 🔨 Build Kernel
+        # Clean and defconfig
+        make O=$OUT_DIR persephone_defconfig
+
+        # Build
+        make -j$(nproc --all) \
+          O=$OUT_DIR \
+          ARCH=arm64 \
+          CC=clang \
+          CLANG_TRIPLE=aarch64-linux-gnu- \
+          CROSS_COMPILE=aarch64-linux-android- \
+          CROSS_COMPILE_ARM32=arm-linux-androideabi-
+
+        # Check output
+        if [ ! -f "$OUT_DIR/arch/arm64/boot/Image.gz-dtb" ]; then
+          echo "❌ Build failed: Image.gz-dtb not found"
+          exit 1
+        fi
+
+        # Copy to AnyKernel3
+        cp $OUT_DIR/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+
+    - name: 📦 Pack flashable ZIP
       run: |
-        chmod +x build.sh
-        ./build.sh
+        cd AnyKernel3
+        zip -r9 ../Persephone-Kernel.zip * -x .git README.md
 
-    - name: 📦 Upload Kernel ZIP
+    - name: 📤 Upload flashable ZIP
       uses: actions/upload-artifact@v4
       with:
-        name: Persephone-ZIP
-        path: AnyKernel3/*.zip
-        retention-days: 7
+        name: Persephone-Kernel-ZIP
+        path: Persephone-Kernel.zip
